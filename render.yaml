@@ -1,0 +1,126 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+#
+# Deploys the whole backend with one click: a web service (API + embedded
+# click-worker), a Postgres database, and a Key Value (Redis) instance —
+# all on Render's free tier, no credit card required.
+#
+# IMPORTANT — read before relying on this for anything beyond a demo:
+#   - Render's free Postgres expires 30 days after creation (then a 14-day
+#     grace period, then permanent deletion). Fine for evaluating this
+#     project; NOT fine for a database you want to keep. See the root
+#     README's "Deploying for real" section for how to point DATABASE_URL
+#     at a permanent free Postgres (e.g. Neon) instead — it's a one-line
+#     change to the DATABASE_URL env var after deploying, no code changes.
+#   - Render's free web services spin down after 15 minutes of inactivity
+#     and take ~30-60s to wake on the next request. Upgrade the `api`
+#     service's plan to remove this.
+#   - The click-analytics worker runs INSIDE the api service here
+#     (EMBED_WORKER=true) because Render's free tier has no background
+#     worker service type. For real production traffic, split it into its
+#     own `type: worker` service (see the commented block below) on a
+#     paid plan — this is what the k8s manifests in /k8s do by default.
+
+databases:
+  - name: shortlink-db
+    plan: free
+    databaseName: shortlink
+    user: shortlink
+
+services:
+  - type: web
+    name: shortlink-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3000"
+      - key: LOG_LEVEL
+        value: info
+      - key: EMBED_WORKER
+        value: "true"
+      - key: CLICK_WORKER_CONCURRENCY
+        value: "5"
+      # Set these two AFTER your first deploy, once Render assigns your
+      # service's .onrender.com URL (or once you attach a custom domain) —
+      # the Render dashboard prompts for `sync: false` vars on first deploy,
+      # but you won't know your own URL until that first deploy finishes.
+      # See the README for the exact two-minute follow-up step.
+      - key: PUBLIC_BASE_URL
+        sync: false
+      - key: SHORTLINK_DOMAINS
+        sync: false
+      # Set this to your Vercel frontend's URL once you've deployed it
+      # (e.g. https://your-app.vercel.app). Until then the API still
+      # works fine for direct/curl use; only browser-based frontend
+      # requests need this.
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: shortlink-db
+          property: connectionString
+      - key: DATABASE_SSL
+        value: "true" # Render Postgres requires SSL
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: shortlink-cache
+          property: connectionString
+      - key: REDIS_CACHE_TTL_SECONDS
+        value: "3600"
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: SHORTCODE_SECRET
+        generateValue: true
+      - key: IP_HASH_SALT
+        generateValue: true
+      - key: CLICK_EVENT_RETENTION_DAYS
+        value: "90"
+      - key: RATE_LIMIT_ANONYMOUS_PER_MIN
+        value: "30"
+      - key: RATE_LIMIT_AUTHENTICATED_PER_MIN
+        value: "300"
+      - key: RATE_LIMIT_REDIRECT_PER_MIN
+        value: "1000"
+
+  - type: keyvalue
+    name: shortlink-cache
+    plan: free
+    maxmemoryPolicy: noeviction # never evict rate-limit counters or queued click-events under memory pressure
+    ipAllowList: [] # internal connections only — not reachable from the public internet
+
+  # ── For real production traffic: split the worker out (paid plans) ──
+  # Uncomment this block, set EMBED_WORKER to "false" above, and the
+  # click-analytics worker runs as its own scalable service instead of
+  # sharing resources with the API (see README "Why a separate worker").
+  #
+  # - type: worker
+  #   name: shortlink-worker
+  #   runtime: docker
+  #   dockerfilePath: ./Dockerfile.worker
+  #   plan: starter
+  #   envVars:
+  #     - key: CLICK_WORKER_CONCURRENCY
+  #       value: "10"
+  #     - key: DATABASE_URL
+  #       fromDatabase:
+  #         name: shortlink-db
+  #         property: connectionString
+  #     - key: DATABASE_SSL
+  #       value: "true"
+  #     - key: REDIS_URL
+  #       fromService:
+  #         type: keyvalue
+  #         name: shortlink-cache
+  #         property: connectionString
+  #     - key: IP_HASH_SALT
+  #       fromService:
+  #         type: web
+  #         name: shortlink-api
+  #         envVarKey: IP_HASH_SALT

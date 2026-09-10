@@ -1,0 +1,19 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: shortlink-partition-maintenance
+spec:
+  # First of every month, 03:00 UTC — low-traffic window.
+  schedule: "0 3 1 * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: create-partitions
+              image: shortlink-api:latest # same image as the API; just runs a different entrypoint
+              command: ["node", "--import", "tsx", "scripts/create-partitions.ts"]
+              envFrom:
+                - configMapRef: { name: shortlink-config }
+                - secretRef: { name: shortlink-secrets }
