@@ -6,7 +6,7 @@ export const pool = new pg.Pool({
   connectionString: config.db.url,
   max: config.db.poolMax,
   idleTimeoutMillis: config.db.idleTimeoutMs,
-  ssl: config.db.ssl ? { rejectUnauthorized: true } : undefined,
+  ssl: config.db.ssl ? { rejectUnauthorized: false } : undefined,
   // Fail fast rather than hanging forever if the DB is unreachable — a
   // hung connection acquisition under load is worse than a fast error that
   // triggers our circuit breaker / 503 response.
