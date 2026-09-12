@@ -78,10 +78,16 @@ jobs:
       - name: Build API image
         run: docker build -t shortlink-api:${{ github.sha }} -f Dockerfile .
 
-      - name: Build worker image
-        run: docker build -t shortlink-worker:${{ github.sha }} -f Dockerfile.worker .
+      # This project currently runs with EMBED_WORKER=true (the
+      # click-analytics worker runs inside this same image — see
+      # src/queue/click-worker.ts and render.yaml) rather than as a
+      # separate worker image, so there's only one image to build here.
+      # If the worker is ever split out for real production scale, add a
+      # Dockerfile.worker (see render.yaml's commented-out `worker`
+      # service block for exactly what it needs to contain) and a
+      # matching build step here.
 
       # In a real pipeline: push to a registry (ECR/GCR/GHCR) here, tagged
-      # with the commit SHA, then trigger a deploy (Argo CD / Helm upgrade /
-      # kubectl set image) against a staging cluster on `main`, promoting to
-      # production via a manual approval gate or a separate release workflow.
+      # with the commit SHA, then trigger a deploy against a staging
+      # environment on `main`, promoting to production via a manual
+      # approval gate or a separate release workflow.
